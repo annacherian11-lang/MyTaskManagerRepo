@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="row justify-content-center">
+    <div class="col-lg-10">
+      <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-3">
+        <div>
+          <h2 class="h4 text-white fw-semibold mb-0">JIRA Tasks</h2>
+          <div class="text-soft small">View your assigned JIRA issues.</div>
+        </div>
+        <a class="btn btn-sm btn-outline-light" href="{{ url_for('home') }}">Back</a>
+      </div>
+
+      <div class="rounded-4 bg-blur text-white p-3 p-md-4">
+        {% if not jira_configured %}
+          <div class="text-center py-4">
+            <div class="fw-semibold mb-2">JIRA not configured</div>
+            <div class="text-soft small mb-3">
+              Set these environment variables to connect to JIRA:
+            </div>
+            <code class="d-block text-start mx-auto" style="max-width: 400px; background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px;">
+              JIRA_URL=https://your-domain.atlassian.net<br />
+              JIRA_EMAIL=your-email@example.com<br />
+              JIRA_API_TOKEN=your-api-token
+            </code>
+          </div>
+        {% elif error_message %}
+          <div class="alert alert-danger">
+            <strong>Error connecting to JIRA:</strong> {{ error_message }}
+          </div>
+        {% elif issues|length == 0 %}
+          <div class="text-soft text-center py-4">No JIRA issues assigned to you.</div>
+        {% else %}
+          <div class="fw-semibold mb-2">Your Assigned Issues ({{ issues|length }})</div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle text-white">
+              <thead>
+                <tr class="text-soft">
+                  <th>Key</th>
+                  <th>Summary</th>
+                  <th>Status</th>
+                  <th>Due Date</th>
+                  <th>Assignee</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for i in issues %}
+                  <tr>
+                    <td>
+                      <a href="{{ i.url }}" target="_blank" class="text-info text-decoration-none fw-semibold">{{ i.key }}</a>
+                    </td>
+                    <td>{{ i.summary }}</td>
+                    <td>
+                      {% if i.status.lower() in ['done', 'closed', 'resolved'] %}
+                        <span class="badge text-bg-success">{{ i.status }}</span>
+                      {% elif i.status.lower() in ['in progress', 'in review'] %}
+                        <span class="badge text-bg-info">{{ i.status }}</span>
+                      {% elif i.status.lower() in ['on hold', 'blocked'] %}
+                        <span class="badge text-bg-warning">{{ i.status }}</span>
+                      {% else %}
+                        <span class="badge text-bg-primary">{{ i.status }}</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-soft">{{ i.duedate or "-" }}</td>
+                    <td class="text-soft">{{ i.assignee or "-" }}</td>
+                    <td>
+                      <a href="{{ i.url }}" target="_blank" class="btn btn-sm btn-outline-light">View in JIRA</a>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock %}
