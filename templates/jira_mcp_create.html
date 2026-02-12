@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="row justify-content-center">
+    <div class="col-lg-8">
+      <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-3">
+        <div>
+          <h2 class="h4 text-white fw-semibold mb-0">Create JIRA Task</h2>
+          <div class="text-soft small">Create a new task in JIRA via MCP.</div>
+        </div>
+        <div class="d-flex gap-2">
+          <a class="btn btn-sm btn-light" href="{{ url_for('jira_mcp_view') }}">View Tasks</a>
+          <a class="btn btn-sm btn-outline-light" href="{{ url_for('jira_mcp') }}">Back</a>
+        </div>
+      </div>
+
+      <div class="rounded-4 bg-blur text-white p-4">
+        <form method="post" action="{{ url_for('jira_mcp_create_submit') }}">
+          <div class="mb-3">
+            <label class="form-label text-soft">Summary <span class="text-danger">*</span></label>
+            <input type="text" class="form-control bg-white text-dark" name="summary" 
+                   placeholder="Enter task summary" required />
+          </div>
+          
+          <div class="mb-3">
+            <label class="form-label text-soft">Description</label>
+            <textarea class="form-control bg-white text-dark" name="description" rows="3" 
+                      placeholder="Enter task description (optional)"></textarea>
+          </div>
+          
+          <div class="row mb-3">
+            <div class="col-md-4">
+              <label class="form-label text-soft">Issue Type</label>
+              <select class="form-select bg-white text-dark" name="issue_type">
+                <option value="Task" selected>Task</option>
+                <option value="Bug">Bug</option>
+                <option value="Story">Story</option>
+                <option value="Epic">Epic</option>
+              </select>
+            </div>
+            
+            <div class="col-md-4">
+              <label class="form-label text-soft">Priority</label>
+              <select class="form-select bg-white text-dark" name="priority">
+                <option value="">-- Select --</option>
+                <option value="Highest">Highest</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+                <option value="Lowest">Lowest</option>
+              </select>
+            </div>
+            
+            <div class="col-md-4">
+              <label class="form-label text-soft">Due Date</label>
+              <input type="date" class="form-control bg-white text-dark" name="due_date" />
+            </div>
+          </div>
+          
+          <div class="text-center mt-4">
+            <button type="submit" class="btn btn-light fw-semibold px-4">
+              Create JIRA Task
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock %}
