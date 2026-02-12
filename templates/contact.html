@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Contact Me{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="row justify-content-center">
+    <div class="col-md-8">
+      <div class="card bg-blur border-0 rounded-4 p-4">
+        <div class="text-center mb-4">
+          <h1 class="fw-bold text-white">Contact Me</h1>
+          <p class="text-soft lead">I'd love to hear from you!</p>
+        </div>
+
+        <div class="text-soft">
+          <p class="mb-4">
+            If you have any questions, ideas, collaboration requests, or just want to say hello, feel free to reach out.
+          </p>
+
+          <!-- Email Section -->
+          <div class="mb-4">
+            <h5 class="text-white">
+              <span class="me-2">Email</span>
+            </h5>
+            <p class="ps-3">
+              <a href="mailto:anna.cherian11@gmail.com" class="text-info text-decoration-none">
+                anna.cherian11@gmail.com
+              </a>
+            </p>
+          </div>
+
+          <!-- Phone Section -->
+          <div class="mb-4">
+            <h5 class="text-white">
+              <span class="me-2">Phone</span>
+            </h5>
+            <p class="ps-3">+00 123 456 7890</p>
+          </div>
+
+          <!-- Message Section -->
+          <div class="mb-4">
+            <h5 class="text-white">Message</h5>
+            <p class="ps-3">
+              You can drop me a message anytime. I'll get back to you as soon as I can.
+            </p>
+          </div>
+
+          <!-- Follow Me Section -->
+          <div class="mb-4">
+            <h5 class="text-white">Follow Me</h5>
+            <div class="ps-3">
+              <p class="mb-2">
+                <strong>LinkedIn:</strong> 
+                <a href="#" class="text-info text-decoration-none">your-profile-url</a>
+              </p>
+              <p class="mb-0">
+                <strong>GitHub:</strong> 
+                <a href="#" class="text-info text-decoration-none">your-profile-url</a>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="text-center mt-4">
+          <a href="{{ url_for('home') }}" class="btn btn-outline-light">Back to Dashboard</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
