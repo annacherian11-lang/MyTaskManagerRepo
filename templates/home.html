@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="row justify-content-center">
+    <div class="col-lg-10">
+      <div class="rounded-4 bg-blur text-white p-4 p-md-5">
+        <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+          <div>
+            <h2 class="h3 fw-semibold mb-1">Dashboard</h2>
+            <div class="text-soft">You are in <span class="text-white fw-semibold">{{ mode|capitalize }}</span> mode.</div>
+          </div>
+          {% if mode == "work" %}
+            <div class="d-flex gap-2">
+              <a class="btn btn-light fw-semibold" href="{{ url_for('tasks') }}">My task list</a>
+              <a class="btn btn-outline-light fw-semibold" href="{{ url_for('people') }}">Manage my people</a>
+            </div>
+          {% else %}
+            <div class="d-flex gap-2">
+              <a class="btn btn-light fw-semibold" href="{{ url_for('tasks') }}">My task list</a>
+              <a class="btn btn-outline-light fw-semibold" href="{{ url_for('people') }}">My Family Members</a>
+            </div>
+          {% endif %}
+        </div>
+
+        <hr class="border-white border-opacity-10 my-4" />
+
+        {% if mode == "work" %}
+          <div class="row g-3 mb-3">
+            <div class="col-md-3">
+              <div class="p-3 rounded-4 bg-dark bg-opacity-25 border border-white border-opacity-10 h-100">
+                <div class="fw-semibold mb-1">Manage my people</div>
+                <div class="text-soft small mb-2">
+                  Add people and mark whether they're your Direct Report (DR).
+                </div>
+                <a href="{{ url_for('people') }}" class="btn btn-sm btn-outline-light">Open</a>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="p-3 rounded-4 bg-dark bg-opacity-25 border border-white border-opacity-10 h-100">
+                <div class="fw-semibold mb-1">My task list</div>
+                <div class="text-soft small mb-2">
+                  Create tasks with assignee, ETA and status.
+                </div>
+                <a href="{{ url_for('tasks') }}" class="btn btn-sm btn-outline-light">Open</a>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="p-3 rounded-4 bg-dark bg-opacity-25 border border-white border-opacity-10 h-100">
+                <div class="fw-semibold mb-1">JIRA Tasks</div>
+                <div class="text-soft small mb-2">
+                  View and track your JIRA issues.
+                </div>
+                <a href="{{ url_for('jira_tasks') }}" class="btn btn-sm btn-outline-light">Open</a>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="p-3 rounded-4 bg-dark bg-opacity-25 border border-white border-opacity-10 h-100">
+                <div class="fw-semibold mb-1">JIRA MCP</div>
+                <div class="text-soft small mb-2">
+                  Use AI to manage JIRA tasks.
+                </div>
+                <a href="{{ url_for('jira_mcp') }}" class="btn btn-sm btn-outline-light">Open</a>
+              </div>
+            </div>
+          </div>
+          <div class="row g-3">
+            <div class="col-md-3">
+              <div class="p-3 rounded-4 bg-dark bg-opacity-25 border border-white border-opacity-10 h-100">
+                <div class="fw-semibold mb-1">Describe the Process</div>
+                <div class="text-soft small mb-2">
+                  AI-generated process flows from JIRA tasks.
+                </div>
+                <a href="{{ url_for('describe_process') }}" class="btn btn-sm btn-outline-light">Open</a>
+              </div>
+            </div>
+          </div>
+        {% else %}
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="p-3 rounded-4 bg-dark bg-opacity-25 border border-white border-opacity-10 h-100">
+                <div class="fw-semibold mb-1">My Family Members</div>
+                <div class="text-soft small mb-2">
+                  Add family members.
+                </div>
+                <a href="{{ url_for('people') }}" class="btn btn-sm btn-outline-light">Open</a>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="p-3 rounded-4 bg-dark bg-opacity-25 border border-white border-opacity-10 h-100">
+                <div class="fw-semibold mb-1">My task list</div>
+                <div class="text-soft small mb-2">
+                  Create tasks with assignee, ETA and status.
+                </div>
+                <a href="{{ url_for('tasks') }}" class="btn btn-sm btn-outline-light">Open</a>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock %}
