@@ -5,6 +5,9 @@ from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
 
+import requests
+from requests.auth import HTTPBasicAuth
+
 from flask import (
     Flask,
     flash,
@@ -29,6 +32,139 @@ from werkzeug.security import check_password_hash, generate_password_hash
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(APP_DIR, "app.db")
 
+# JIRA Configuration - loaded once at startup
+JIRA_CONFIG = {
+    "url": os.environ.get("JIRA_URL", "").rstrip("/"),
+    "email": os.environ.get("JIRA_EMAIL"),
+    "token": os.environ.get("JIRA_API_TOKEN"),
+    "project": os.environ.get("JIRA_PROJECT_KEY", "SCRUM"),
+}
+
+# LLM Configuration
+LLM_CONFIG = {
+    "groq_key": os.environ.get("GROQ_API_KEY"),
+    "gemini_key": os.environ.get("GEMINI_API_KEY"),
+}
+
+
+def is_jira_configured():
+    """Check if JIRA is properly configured."""
+    return all([JIRA_CONFIG["url"], JIRA_CONFIG["email"], JIRA_CONFIG["token"]])
+
+
+def get_jira_auth():
+    """Get JIRA authentication object."""
+    return HTTPBasicAuth(JIRA_CONFIG["email"], JIRA_CONFIG["token"])
+
+
+def fetch_jira_issues(fields="summary,status", max_results=50):
+    """
+    Fetch JIRA issues assigned to current user.
+    Shared function to avoid duplicate API calls.
+    """
+    if not is_jira_configured():
+        return [], "JIRA not configured"
+    
+    try:
+        api_url = f"{JIRA_CONFIG['url']}/rest/api/3/search/jql"
+        headers = {"Accept": "application/json"}
+        params = {
+            "jql": "assignee = currentUser() ORDER BY updated DESC",
+            "maxResults": max_results,
+            "fields": fields
+        }
+        
+        response = requests.get(
+            api_url, 
+            headers=headers, 
+            params=params, 
+            auth=get_jira_auth(), 
+            verify=False
+        )
+        response.raise_for_status()
+        return response.json().get("issues", []), None
+    except Exception as e:
+        return [], str(e)
+
+
+def fetch_jira_issue(issue_key):
+    """Fetch a single JIRA issue by key."""
+    if not is_jira_configured():
+        return None, "JIRA not configured"
+    
+    try:
+        api_url = f"{JIRA_CONFIG['url']}/rest/api/3/issue/{issue_key}"
+        headers = {"Accept": "application/json"}
+        
+        response = requests.get(
+            api_url, 
+            headers=headers, 
+            auth=get_jira_auth(), 
+            verify=False
+        )
+        response.raise_for_status()
+        return response.json(), None
+    except Exception as e:
+        return None, str(e)
+
+
+def extract_jira_description(description_raw):
+    """
+    Extract plain text from JIRA Atlassian Document Format.
+    Moved to module level to avoid recreating on each call.
+    """
+    if not description_raw:
+        return ""
+    
+    if isinstance(description_raw, str):
+        return description_raw
+    
+    if isinstance(description_raw, dict):
+        def extract_text(node):
+            text = ""
+            if isinstance(node, dict):
+                if node.get("type") == "text":
+                    text += node.get("text", "")
+                for child in node.get("content", []):
+                    text += extract_text(child)
+            elif isinstance(node, list):
+                for item in node:
+                    text += extract_text(item)
+            return text
+        return extract_text(description_raw)
+    
+    return ""
+
+
+def parse_jira_issues(raw_issues, include_description=False):
+    """Parse raw JIRA issues into a clean format."""
+    issues = []
+    for i in raw_issues:
+        fields = i.get("fields", {})
+        status_obj = fields.get("status") or {}
+        assignee_obj = fields.get("assignee") or {}
+        priority_obj = fields.get("priority") or {}
+        duedate = fields.get("duedate") or ""
+        
+        issue = {
+            "key": i.get("key", ""),
+            "summary": fields.get("summary", ""),
+            "status": status_obj.get("name", "Unknown"),
+            "url": f"{JIRA_CONFIG['url']}/browse/{i.get('key', '')}",
+        }
+        
+        if "duedate" in fields:
+            issue["duedate"] = str(duedate)[:10] if duedate else ""
+        if "assignee" in fields:
+            issue["assignee"] = assignee_obj.get("displayName", "")
+        if "priority" in fields:
+            issue["priority"] = priority_obj.get("name", "")
+        if include_description:
+            issue["description"] = extract_jira_description(fields.get("description"))
+        
+        issues.append(issue)
+    return issues
+
 
 def create_app() -> Flask:
     app = Flask(__name__)
@@ -50,9 +186,12 @@ def create_app() -> Flask:
             return None
         return User(row["id"], row["username"])
 
-    @app.before_request
-    def _ensure_db():
+    # Initialize database once at app startup (not on every request)
+    with app.app_context():
         init_db()
+
+    @app.before_request
+    def _ensure_session():
         if "mode" not in session:
             session["mode"] = "work"
 
@@ -279,43 +418,33 @@ def create_app() -> Flask:
         jira_created = False
         jira_key = None
         
-        if create_jira and mode == "work":
-            jira_url = os.environ.get("JIRA_URL", "").rstrip("/")
-            jira_email = os.environ.get("JIRA_EMAIL")
-            jira_token = os.environ.get("JIRA_API_TOKEN")
-            jira_project = os.environ.get("JIRA_PROJECT_KEY", "SCRUM")
-            
-            if all([jira_url, jira_email, jira_token]):
-                try:
-                    import requests
-                    from requests.auth import HTTPBasicAuth
-                    
-                    api_url = f"{jira_url}/rest/api/3/issue"
-                    auth = HTTPBasicAuth(jira_email, jira_token)
-                    headers = {
-                        "Accept": "application/json",
-                        "Content-Type": "application/json"
+        if create_jira and mode == "work" and is_jira_configured():
+            try:
+                api_url = f"{JIRA_CONFIG['url']}/rest/api/3/issue"
+                headers = {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                }
+                
+                payload = {
+                    "fields": {
+                        "project": {"key": JIRA_CONFIG['project']},
+                        "summary": description,
+                        "issuetype": {"name": "Task"}
                     }
-                    
-                    payload = {
-                        "fields": {
-                            "project": {"key": jira_project},
-                            "summary": description,
-                            "issuetype": {"name": "Task"}
-                        }
-                    }
-                    
-                    # Add due date if provided
-                    if eta_date:
-                        payload["fields"]["duedate"] = eta_date
-                    
-                    response = requests.post(api_url, json=payload, headers=headers, auth=auth, verify=False)
-                    response.raise_for_status()
-                    result = response.json()
-                    jira_key = result.get("key")
-                    jira_created = True
-                except Exception as e:
-                    flash(f"Task added locally, but JIRA creation failed: {e}", "warning")
+                }
+                
+                # Add due date if provided
+                if eta_date:
+                    payload["fields"]["duedate"] = eta_date
+                
+                response = requests.post(api_url, json=payload, headers=headers, auth=get_jira_auth(), verify=False)
+                response.raise_for_status()
+                result = response.json()
+                jira_key = result.get("key")
+                jira_created = True
+            except Exception as e:
+                flash(f"Task added locally, but JIRA creation failed: {e}", "warning")
         
         if jira_created and jira_key:
             flash(f"Task added to your task list and JIRA ({jira_key}).", "success")
@@ -331,53 +460,12 @@ def create_app() -> Flask:
             flash("JIRA Tasks is available in Work mode only.", "info")
             return redirect(url_for("home"))
 
-        jira_url = os.environ.get("JIRA_URL", "").rstrip("/")
-        jira_email = os.environ.get("JIRA_EMAIL")
-        jira_token = os.environ.get("JIRA_API_TOKEN")
-
-        jira_configured = bool(jira_url and jira_email and jira_token)
-        issues = []
-        error_message = None
-
-        if jira_configured:
-            try:
-                import requests
-                from requests.auth import HTTPBasicAuth
-                
-                # Use JIRA REST API v3 search/jql endpoint
-                api_url = f"{jira_url}/rest/api/3/search/jql"
-                auth = HTTPBasicAuth(jira_email, jira_token)
-                headers = {"Accept": "application/json"}
-                params = {
-                    "jql": "assignee = currentUser() ORDER BY updated DESC",
-                    "maxResults": 50,
-                    "fields": "summary,status,duedate,assignee"
-                }
-                
-                response = requests.get(api_url, headers=headers, params=params, auth=auth, verify=False)
-                response.raise_for_status()
-                data = response.json()
-                
-                for i in data.get("issues", []):
-                    fields = i.get("fields", {})
-                    status_obj = fields.get("status") or {}
-                    assignee_obj = fields.get("assignee") or {}
-                    duedate = fields.get("duedate") or ""
-                    
-                    issues.append({
-                        "key": i.get("key", ""),
-                        "summary": fields.get("summary", ""),
-                        "status": status_obj.get("name", "Unknown"),
-                        "duedate": str(duedate)[:10] if duedate else "",
-                        "assignee": assignee_obj.get("displayName", ""),
-                        "url": f"{jira_url}/browse/{i.get('key', '')}",
-                    })
-            except Exception as e:
-                error_message = str(e)
+        raw_issues, error_message = fetch_jira_issues(fields="summary,status,duedate,assignee")
+        issues = parse_jira_issues(raw_issues) if raw_issues else []
 
         return render_template(
             "jira_tasks.html",
-            jira_configured=jira_configured,
+            jira_configured=is_jira_configured(),
             issues=issues,
             error_message=error_message,
             mode=mode,
@@ -400,51 +488,8 @@ def create_app() -> Flask:
             flash("JIRA MCP is available in Work mode only.", "info")
             return redirect(url_for("home"))
         
-        jira_url = os.environ.get("JIRA_URL", "").rstrip("/")
-        jira_email = os.environ.get("JIRA_EMAIL")
-        jira_token = os.environ.get("JIRA_API_TOKEN")
-        
-        issues = []
-        error_message = None
-        
-        if all([jira_url, jira_email, jira_token]):
-            try:
-                import requests
-                from requests.auth import HTTPBasicAuth
-                
-                api_url = f"{jira_url}/rest/api/3/search/jql"
-                auth = HTTPBasicAuth(jira_email, jira_token)
-                headers = {"Accept": "application/json"}
-                params = {
-                    "jql": "assignee = currentUser() ORDER BY updated DESC",
-                    "maxResults": 50,
-                    "fields": "summary,status,duedate,assignee,priority,created"
-                }
-                
-                response = requests.get(api_url, headers=headers, params=params, auth=auth, verify=False)
-                response.raise_for_status()
-                data = response.json()
-                
-                for i in data.get("issues", []):
-                    fields = i.get("fields", {})
-                    status_obj = fields.get("status") or {}
-                    assignee_obj = fields.get("assignee") or {}
-                    priority_obj = fields.get("priority") or {}
-                    duedate = fields.get("duedate") or ""
-                    
-                    issues.append({
-                        "key": i.get("key", ""),
-                        "summary": fields.get("summary", ""),
-                        "status": status_obj.get("name", "Unknown"),
-                        "priority": priority_obj.get("name", ""),
-                        "duedate": str(duedate)[:10] if duedate else "",
-                        "assignee": assignee_obj.get("displayName", ""),
-                        "url": f"{jira_url}/browse/{i.get('key', '')}",
-                    })
-            except Exception as e:
-                error_message = str(e)
-        else:
-            error_message = "JIRA not configured"
+        raw_issues, error_message = fetch_jira_issues(fields="summary,status,duedate,assignee,priority")
+        issues = parse_jira_issues(raw_issues) if raw_issues else []
         
         return render_template("jira_mcp_view.html", issues=issues, error_message=error_message, mode=mode)
 
@@ -465,45 +510,8 @@ def create_app() -> Flask:
             flash("Describe Process is available in Work mode only.", "info")
             return redirect(url_for("home"))
         
-        jira_url = os.environ.get("JIRA_URL", "").rstrip("/")
-        jira_email = os.environ.get("JIRA_EMAIL")
-        jira_token = os.environ.get("JIRA_API_TOKEN")
-        
-        issues = []
-        error_message = None
-        
-        if all([jira_url, jira_email, jira_token]):
-            try:
-                import requests
-                from requests.auth import HTTPBasicAuth
-                
-                api_url = f"{jira_url}/rest/api/3/search/jql"
-                auth = HTTPBasicAuth(jira_email, jira_token)
-                headers = {"Accept": "application/json"}
-                params = {
-                    "jql": "assignee = currentUser() ORDER BY updated DESC",
-                    "maxResults": 50,
-                    "fields": "summary,status,description"
-                }
-                
-                response = requests.get(api_url, headers=headers, params=params, auth=auth, verify=False)
-                response.raise_for_status()
-                data = response.json()
-                
-                for i in data.get("issues", []):
-                    fields = i.get("fields", {})
-                    status_obj = fields.get("status") or {}
-                    
-                    issues.append({
-                        "key": i.get("key", ""),
-                        "summary": fields.get("summary", ""),
-                        "status": status_obj.get("name", "Unknown"),
-                        "url": f"{jira_url}/browse/{i.get('key', '')}",
-                    })
-            except Exception as e:
-                error_message = str(e)
-        else:
-            error_message = "JIRA not configured"
+        raw_issues, error_message = fetch_jira_issues(fields="summary,status,description")
+        issues = parse_jira_issues(raw_issues) if raw_issues else []
         
         return render_template("describe_process.html", issues=issues, error_message=error_message, mode=mode)
 
@@ -514,149 +522,104 @@ def create_app() -> Flask:
         if mode != "work":
             return redirect(url_for("home"))
         
-        jira_url = os.environ.get("JIRA_URL", "").rstrip("/")
-        jira_email = os.environ.get("JIRA_EMAIL")
-        jira_token = os.environ.get("JIRA_API_TOKEN")
-        gemini_key = os.environ.get("GEMINI_API_KEY")
-        
         issue_data = None
         process_steps = None
         error_message = None
-        gemini_error = None
+        llm_error = None
         
-        if not all([jira_url, jira_email, jira_token]):
-            error_message = "JIRA not configured"
-        else:
-            try:
-                import requests
-                from requests.auth import HTTPBasicAuth
-                
-                # Fetch JIRA issue details
-                api_url = f"{jira_url}/rest/api/3/issue/{issue_key}"
-                auth = HTTPBasicAuth(jira_email, jira_token)
-                headers = {"Accept": "application/json"}
-                
-                response = requests.get(api_url, headers=headers, auth=auth, verify=False)
-                response.raise_for_status()
-                issue = response.json()
-                
-                fields = issue.get("fields", {})
-                status_obj = fields.get("status") or {}
-                
-                # Extract description text from Atlassian Document Format
-                description_raw = fields.get("description")
-                description_text = ""
-                if description_raw and isinstance(description_raw, dict):
-                    # Parse ADF format
-                    def extract_text(node):
-                        text = ""
-                        if isinstance(node, dict):
-                            if node.get("type") == "text":
-                                text += node.get("text", "")
-                            for child in node.get("content", []):
-                                text += extract_text(child)
-                        elif isinstance(node, list):
-                            for item in node:
-                                text += extract_text(item)
-                        return text
-                    description_text = extract_text(description_raw)
-                elif isinstance(description_raw, str):
-                    description_text = description_raw
-                
-                issue_data = {
-                    "key": issue.get("key", ""),
-                    "summary": fields.get("summary", ""),
-                    "status": status_obj.get("name", "Unknown"),
-                    "description": description_text,
-                    "url": f"{jira_url}/browse/{issue.get('key', '')}",
-                }
-                
-                # Generate Mermaid diagram using Groq (fallback to Gemini)
-                groq_key = os.environ.get("GROQ_API_KEY")
-                llm_error = None
-                mermaid_diagram = None
-                
-                if groq_key and description_text.strip():
-                    try:
-                        from groq import Groq
-                        
-                        client = Groq(api_key=groq_key)
-                        
-                        prompt = f"""Analyze this JIRA task and create a process flow diagram using Mermaid syntax.
-
-JIRA Task: {issue_data['summary']}
-
-Description:
-{description_text}
-
-Generate a Mermaid flowchart that shows the sequence of steps or process flow for completing this task.
-Use the flowchart TD (top-down) format.
-Make it clear and easy to understand.
-Only output the Mermaid code, nothing else. Do not include ```mermaid or ``` markers."""
-                        
-                        response = client.chat.completions.create(
-                            model="llama-3.1-8b-instant",
-                            messages=[{"role": "user", "content": prompt}],
-                            temperature=0.3,
-                            max_tokens=1024
-                        )
-                        mermaid_diagram = response.choices[0].message.content.strip()
-                        
-                        # Clean up any markdown code blocks
-                        if mermaid_diagram.startswith("```"):
-                            lines = mermaid_diagram.split("\n")
-                            mermaid_diagram = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
-                        
-                    except Exception as e:
-                        mermaid_diagram = None
-                        llm_error = str(e)
-                elif gemini_key and description_text.strip():
-                    # Fallback to Gemini if Groq not configured
-                    try:
-                        import google.generativeai as genai
-                        
-                        genai.configure(api_key=gemini_key)
-                        model = genai.GenerativeModel('gemini-2.0-flash')
-                        
-                        prompt = f"""Analyze this JIRA task and create a process flow diagram using Mermaid syntax.
-
-JIRA Task: {issue_data['summary']}
-
-Description:
-{description_text}
-
-Generate a Mermaid flowchart that shows the sequence of steps or process flow for completing this task.
-Use the flowchart TD (top-down) format.
-Make it clear and easy to understand.
-Only output the Mermaid code, nothing else. Do not include ```mermaid or ``` markers."""
-                        
-                        response = model.generate_content(prompt)
-                        mermaid_diagram = response.text.strip()
-                        
-                        # Clean up any markdown code blocks
-                        if mermaid_diagram.startswith("```"):
-                            lines = mermaid_diagram.split("\n")
-                            mermaid_diagram = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
-                        
-                    except Exception as e:
-                        mermaid_diagram = None
-                        llm_error = str(e)
-                elif not groq_key and not gemini_key:
-                    pass  # No API key configured
-                
-                process_steps = mermaid_diagram  # Pass to template
-                gemini_error = llm_error
+        # Fetch JIRA issue using shared function
+        issue, error_message = fetch_jira_issue(issue_key)
+        
+        if issue:
+            fields = issue.get("fields", {})
+            status_obj = fields.get("status") or {}
+            description_text = extract_jira_description(fields.get("description"))
+            
+            issue_data = {
+                "key": issue.get("key", ""),
+                "summary": fields.get("summary", ""),
+                "status": status_obj.get("name", "Unknown"),
+                "description": description_text,
+                "url": f"{JIRA_CONFIG['url']}/browse/{issue.get('key', '')}",
+            }
+            
+            # Generate Mermaid diagram using Groq (fallback to Gemini)
+            mermaid_diagram = None
+            
+            if LLM_CONFIG["groq_key"] and description_text.strip():
+                try:
+                    from groq import Groq
                     
-            except Exception as e:
-                error_message = str(e)
+                    client = Groq(api_key=LLM_CONFIG["groq_key"])
+                    
+                    prompt = f"""Analyze this JIRA task and create a process flow diagram using Mermaid syntax.
+
+JIRA Task: {issue_data['summary']}
+
+Description:
+{description_text}
+
+Generate a Mermaid flowchart that shows the sequence of steps or process flow for completing this task.
+Use the flowchart TD (top-down) format.
+Make it clear and easy to understand.
+Only output the Mermaid code, nothing else. Do not include ```mermaid or ``` markers."""
+                    
+                    response = client.chat.completions.create(
+                        model="llama-3.1-8b-instant",
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.3,
+                        max_tokens=1024
+                    )
+                    mermaid_diagram = response.choices[0].message.content.strip()
+                    
+                    # Clean up any markdown code blocks
+                    if mermaid_diagram.startswith("```"):
+                        lines = mermaid_diagram.split("\n")
+                        mermaid_diagram = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+                    
+                except Exception as e:
+                    mermaid_diagram = None
+                    llm_error = str(e)
+            elif LLM_CONFIG["gemini_key"] and description_text.strip():
+                # Fallback to Gemini if Groq not configured
+                try:
+                    import google.generativeai as genai
+                    
+                    genai.configure(api_key=LLM_CONFIG["gemini_key"])
+                    model = genai.GenerativeModel('gemini-2.0-flash')
+                    
+                    prompt = f"""Analyze this JIRA task and create a process flow diagram using Mermaid syntax.
+
+JIRA Task: {issue_data['summary']}
+
+Description:
+{description_text}
+
+Generate a Mermaid flowchart that shows the sequence of steps or process flow for completing this task.
+Use the flowchart TD (top-down) format.
+Make it clear and easy to understand.
+Only output the Mermaid code, nothing else. Do not include ```mermaid or ``` markers."""
+                    
+                    response = model.generate_content(prompt)
+                    mermaid_diagram = response.text.strip()
+                    
+                    # Clean up any markdown code blocks
+                    if mermaid_diagram.startswith("```"):
+                        lines = mermaid_diagram.split("\n")
+                        mermaid_diagram = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+                    
+                except Exception as e:
+                    mermaid_diagram = None
+                    llm_error = str(e)
+            
+            process_steps = mermaid_diagram
         
-        groq_key = os.environ.get("GROQ_API_KEY")
         return render_template(
             "process_flow.html",
             issue=issue_data,
             process_steps=process_steps,
-            gemini_configured=bool(groq_key or gemini_key),
-            gemini_error=gemini_error,
+            gemini_configured=bool(LLM_CONFIG["groq_key"] or LLM_CONFIG["gemini_key"]),
+            gemini_error=llm_error,
             error_message=error_message,
             mode=mode
         )
@@ -678,21 +641,12 @@ Only output the Mermaid code, nothing else. Do not include ```mermaid or ``` mar
             flash("Summary is required.", "danger")
             return redirect(url_for("jira_mcp_create"))
         
-        jira_url = os.environ.get("JIRA_URL", "").rstrip("/")
-        jira_email = os.environ.get("JIRA_EMAIL")
-        jira_token = os.environ.get("JIRA_API_TOKEN")
-        jira_project = os.environ.get("JIRA_PROJECT_KEY", "SCRUM")
-        
-        if not all([jira_url, jira_email, jira_token]):
+        if not is_jira_configured():
             flash("JIRA not configured.", "danger")
             return redirect(url_for("jira_mcp_create"))
         
         try:
-            import requests
-            from requests.auth import HTTPBasicAuth
-            
-            api_url = f"{jira_url}/rest/api/3/issue"
-            auth = HTTPBasicAuth(jira_email, jira_token)
+            api_url = f"{JIRA_CONFIG['url']}/rest/api/3/issue"
             headers = {
                 "Accept": "application/json",
                 "Content-Type": "application/json"
@@ -700,7 +654,7 @@ Only output the Mermaid code, nothing else. Do not include ```mermaid or ``` mar
             
             payload = {
                 "fields": {
-                    "project": {"key": jira_project},
+                    "project": {"key": JIRA_CONFIG['project']},
                     "summary": summary,
                     "issuetype": {"name": issue_type}
                 }
@@ -724,7 +678,7 @@ Only output the Mermaid code, nothing else. Do not include ```mermaid or ``` mar
             if due_date:
                 payload["fields"]["duedate"] = due_date
             
-            response = requests.post(api_url, json=payload, headers=headers, auth=auth, verify=False)
+            response = requests.post(api_url, json=payload, headers=headers, auth=get_jira_auth(), verify=False)
             response.raise_for_status()
             result = response.json()
             
