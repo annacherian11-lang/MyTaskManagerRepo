@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="row justify-content-center">
+    <div class="col-lg-10">
+      <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-3">
+        <div>
+          <h2 class="h4 text-white fw-semibold mb-0">My task list</h2>
+          <div class="text-soft small">Create tasks and store them in your task table.</div>
+        </div>
+        <div class="d-flex gap-2">
+          <a class="btn btn-sm btn-outline-light" href="{{ url_for('home') }}">Back</a>
+        </div>
+      </div>
+
+      <div class="rounded-4 bg-blur text-white p-3 p-md-4 mb-3">
+        <form method="post" action="{{ url_for('add_task') }}" class="row g-3 align-items-end">
+          <div class="col-md-5">
+            <label class="form-label text-soft">Task Description</label>
+            <input class="form-control bg-white text-dark" name="description" placeholder="What needs to be done?" />
+          </div>
+          <div class="col-md-3">
+            <label class="form-label text-soft">Assignee</label>
+            <select class="form-select bg-white text-dark" name="assignee">
+              <option value="self">Self</option>
+              {% for p in people %}
+                <option value="{{ p.id }}">{{ p.name }} ({{ p.identifier }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label text-soft">ETA</label>
+            <input class="form-control bg-white text-dark" type="date" name="eta_date" />
+          </div>
+          <div class="col-md-2">
+            <label class="form-label text-soft">Status</label>
+            <select class="form-select bg-white text-dark" name="status">
+              {% for s in statuses %}
+                <option value="{{ s }}">{{ s }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% if mode == 'work' %}
+          <div class="col-12 d-flex justify-content-center align-items-center gap-3">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="create_jira" id="create_jira" value="on" />
+              <label class="form-check-label text-soft" for="create_jira">Create JIRA Task</label>
+            </div>
+            <button class="btn btn-light fw-semibold">Add to My Task List</button>
+          </div>
+          {% else %}
+          <div class="col-12 text-center">
+            <button class="btn btn-light fw-semibold">Add to My Task List</button>
+          </div>
+          {% endif %}
+        </form>
+      </div>
+
+      <div class="rounded-4 bg-blur text-white p-3 p-md-4">
+        <div class="fw-semibold mb-2">Tasks</div>
+        {% if tasks|length == 0 %}
+          <div class="text-soft">No tasks added yet.</div>
+        {% else %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle text-white">
+              <thead>
+                <tr class="text-soft">
+                  <th>ID</th>
+                  <th>Description</th>
+                  <th>Assignee</th>
+                  <th>ETA</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for t in tasks %}
+                  <tr>
+                    <td class="text-soft">{{ loop.index }}</td>
+                    <td>{{ t.description }}</td>
+                    <td class="text-soft">
+                      {% if t.assignee_type == "self" %}
+                        Self
+                      {% else %}
+                        {{ t.assignee_person_name or ("Person #" ~ t.assignee_person_id) }}
+                      {% endif %}
+                    </td>
+                    <td class="text-soft">{{ t.eta_date or "" }}</td>
+                    <td>
+                      {% if t.status == "Open" %}
+                        <span class="badge text-bg-primary">Open</span>
+                      {% elif t.status == "Assigned" %}
+                        <span class="badge text-bg-info">Assigned</span>
+                      {% elif t.status == "Closed" %}
+                        <span class="badge text-bg-success">Closed</span>
+                      {% else %}
+                        <span class="badge text-bg-warning">On Hold</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-soft">{{ t.created_at }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+
