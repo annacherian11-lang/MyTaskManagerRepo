@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="row justify-content-center">
+    <div class="col-lg-10">
+      <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-3">
+        <div>
+          <h2 class="h4 text-white fw-semibold mb-0">{% if mode == 'personal' %}My Family Members{% else %}Manage my people{% endif %}</h2>
+          <div class="text-soft small">{% if mode == 'personal' %}Add family members.{% else %}Add people and mark if they are Direct Reports (DR).{% endif %}</div>
+        </div>
+        <a class="btn btn-sm btn-outline-light" href="{{ url_for('home') }}">Back</a>
+      </div>
+
+      <div class="rounded-4 bg-blur text-white p-3 p-md-4 mb-3">
+        <form method="post" action="{{ url_for('add_person') }}" class="row g-3 align-items-end">
+          <div class="col-md-5">
+            <label class="form-label text-soft">First Name</label>
+            <input class="form-control bg-white text-dark" name="name" placeholder="e.g., Priya" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label text-soft">Last Name</label>
+            <input class="form-control bg-white text-dark" name="identifier" placeholder="e.g., Sharma" />
+          </div>
+          {% if mode == 'work' %}
+          <div class="col-md-2">
+            <div class="form-check mt-4">
+              <input class="form-check-input" type="checkbox" name="is_direct_report" id="is_direct_report" />
+              <label class="form-check-label" for="is_direct_report">DR</label>
+            </div>
+          </div>
+          {% endif %}
+          <div class="col-md-1 d-grid">
+            <button class="btn btn-light fw-semibold">Add</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="rounded-4 bg-blur text-white p-3 p-md-4">
+        <div class="fw-semibold mb-2">{% if mode == 'personal' %}Family Members{% else %}People{% endif %}</div>
+        {% if people|length == 0 %}
+          <div class="text-soft">No people added yet.</div>
+        {% else %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle text-white">
+              <thead>
+                <tr class="text-soft">
+                  <th>ID</th>
+                  <th>First Name</th>
+                  <th>Last Name</th>
+                  {% if mode == 'work' %}<th>DR</th>{% endif %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for p in people %}
+                  <tr>
+                    <td class="text-soft">{{ loop.index }}</td>
+                    <td>{{ p.name }}</td>
+                    <td class="text-soft">{{ p.identifier }}</td>
+                    {% if mode == 'work' %}
+                    <td>
+                      {% if p.is_direct_report %}
+                        <span class="badge text-bg-success">Yes</span>
+                      {% else %}
+                        <span class="badge text-bg-secondary">No</span>
+                      {% endif %}
+                    </td>
+                    {% endif %}
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+
